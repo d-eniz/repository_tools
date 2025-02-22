@@ -1,7 +1,7 @@
 import os
 
-BASE_DIR = "D:/test"
-username = "d-eniz"
+BASE_DIR = "BASE_DIR"
+username = "username"
 
 
 def get_repo_name():
