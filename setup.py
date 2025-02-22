@@ -2,6 +2,7 @@ import os
 import json
 import shutil
 import subprocess
+import tempfile
 
 
 def get_user_input():
@@ -10,35 +11,54 @@ def get_user_input():
     return repo_dir, github_username
 
 
-def create_config_file(repo_dir, github_username):
-    config = {"repo_dir": repo_dir, "github_username": github_username}
-    with open("config.json", "w") as f:
-        json.dump(config, f, indent=4)
+def load_or_create_config():
+    if os.path.exists("config.json"):
+        print("\nLoading configuration from config.json")
+        print("Edit or delete config.json to change the configuration.\n")
+        with open("config.json", "r") as f:
+            config = json.load(f)
+        return config["repo_dir"], config["github_username"]
+    else:
+        repo_dir, github_username = get_user_input()
+        config = {"repo_dir": repo_dir, "github_username": github_username}
+        with open("config.json", "w") as f:
+            json.dump(config, f, indent=4)
+        return repo_dir, github_username
 
 
-def modify_open_repo_py(repo_dir, github_username):
-    with open("open_repo.py", "r") as f:
+def modify_file_content(content, repo_dir, github_username):
+    content = content.replace(
+        'BASE_DIR = "BASE_DIR"', f'BASE_DIR = "{repo_dir}"'
+    )
+    content = content.replace('username = "username"', f'username = "{github_username}"')
+    return content
+
+
+def modify_ahk_script_content(content, repo_dir):
+    content = content.replace(
+        "python path\\to\\repo\\open_repo.py", f"python {repo_dir}\\open_repo.py"
+    )
+    return content
+
+
+def create_temp_file_with_modifications(original_file, repo_dir, github_username=None):
+    with open(original_file, "r") as f:
         content = f.read()
 
-    content = content.replace(
-        'BASE_DIR = "D:/Repositories"', f'BASE_DIR = "{repo_dir}"'
+    if original_file.endswith(".py"):
+        modified_content = modify_file_content(content, repo_dir, github_username)
+    elif original_file.endswith(".ahk"):
+        modified_content = modify_ahk_script_content(content, repo_dir)
+    else:
+        raise ValueError("Unsupported file type for modification.")
+
+    temp_file = tempfile.NamedTemporaryFile(
+        delete=False, mode="w", suffix=os.path.splitext(original_file)[1]
     )
-    content = content.replace('username = "d-eniz"', f'username = "{github_username}"')
+    temp_file.write(modified_content)
+    temp_file.close()
 
-    with open("open_repo.py", "w") as f:
-        f.write(content)
-
-
-def modify_repo_ahk(repo_dir):
-    with open("repo.ahk", "r") as f:
-        content = f.read()
-
-    content = content.replace(
-        "python D:/Repositories\\open_repo.py", f"python {repo_dir}\\open_repo.py"
-    )
-
-    with open("repo.ahk", "w") as f:
-        f.write(content)
+    return temp_file.name
 
 
 def create_directory_if_not_exists(repo_dir):
@@ -49,8 +69,8 @@ def create_directory_if_not_exists(repo_dir):
         print(f"Directory already exists: {repo_dir}")
 
 
-def copy_files(repo_dir):
-    shutil.copy("open_repo.py", repo_dir)
+def copy_files(repo_dir, temp_open_repo_py, temp_repo_ahk):
+    shutil.copy(temp_open_repo_py, os.path.join(repo_dir, "open_repo.py"))
     print(f"Copied open_repo.py to {repo_dir}")
 
     startup_dir = os.path.join(
@@ -61,7 +81,7 @@ def copy_files(repo_dir):
         "Programs",
         "Startup",
     )
-    shutil.copy("repo.ahk", startup_dir)
+    shutil.copy(temp_repo_ahk, os.path.join(startup_dir, "repo.ahk"))
     print(f"Copied repo.ahk to {startup_dir}")
 
 
@@ -76,7 +96,6 @@ def run_ahk_script():
     )
 
     try:
-        # Use subprocess.Popen to run the AHK script in the correct directory
         subprocess.Popen(
             ["start", "repo.ahk"],
             cwd=startup_dir,
@@ -88,13 +107,20 @@ def run_ahk_script():
 
 
 def main():
-    repo_dir, github_username = get_user_input()
+    repo_dir, github_username = load_or_create_config()
     create_directory_if_not_exists(repo_dir)
-    create_config_file(repo_dir, github_username)
-    modify_open_repo_py(repo_dir, github_username)
-    modify_repo_ahk(repo_dir)
-    copy_files(repo_dir)
+
+    temp_open_repo_py = create_temp_file_with_modifications(
+        "open_repo.py", repo_dir, github_username
+    )
+    temp_repo_ahk = create_temp_file_with_modifications("repo.ahk", repo_dir)
+
+    copy_files(repo_dir, temp_open_repo_py, temp_repo_ahk)
+
     run_ahk_script()
+
+    os.unlink(temp_open_repo_py)
+    os.unlink(temp_repo_ahk)
     print("Setup completed successfully!")
 
 
